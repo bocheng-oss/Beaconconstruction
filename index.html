@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beacon 施工作業系統</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background-color: #FFFFFF;
+      color: #333333;
+    }
+
+    .brand-red {
+      background-color: #e2231aff;
+    }
+
+    .text-brand-red {
+      color: #e2231aff;
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(10px);
+    }
+
+    .rounded-huge {
+      border-radius: 2.5rem;
+    }
+
+    .photo-placeholder {
+      border: 2px dashed #DDD;
+      transition: all 0.3s ease;
+    }
+
+    .photo-placeholder:hover {
+      border-color: #e2231aff;
+      background-color: #FFF5F5;
+    }
+
+    #loadingOverlay {
+      display: none;
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-[#F5F5F5]">
+
+  <!-- Header -->
+  <header class="brand-red text-white p-6 shadow-lg sticky top-0 z-50">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-2xl font-bold tracking-tight">Beacon 施工作業系統</h1>
+      <button id="backBtn" class="hidden bg-white/20 hover:bg-white/30 px-4 py-2 rounded-full text-sm transition-all"
+        onclick="showStationList()">
+        ← 返回車站列表
+      </button>
+    </div>
+  </header>
+
+  <main class="container mx-auto p-6 max-w-2xl">
+
+    <!-- 1. 車站選擇頁面 -->
+    <div id="stationPage" class="space-y-6">
+      <div class="text-center py-4">
+        <h2 class="text-3xl font-bold text-gray-800">請選擇施工車站</h2>
+        <p class="text-gray-500 mt-2">點擊下方車站或直接搜尋設備</p>
+      </div>
+
+      <!-- 搜尋區塊 -->
+      <div class="space-y-3 bg-white p-6 rounded-huge shadow-xl border-t-4 border-brand-red">
+        <div class="relative">
+          <input type="text" id="stationSearch" placeholder="搜尋捷運站名..." oninput="filterStations()"
+            class="w-full pl-10 pr-4 py-3 bg-gray-50 rounded-full border-none focus:ring-2 focus:ring-brand-red transition-all">
+          <span class="absolute left-4 top-3.5 text-gray-400">🔍</span>
+        </div>
+        <div class="relative">
+          <input type="text" id="hwidSearch" placeholder="直接搜尋 HWID (模糊搜尋)..." oninput="debounceSearchHwid()"
+            class="w-full pl-10 pr-4 py-3 bg-gray-50 rounded-full border-none focus:ring-2 focus:ring-brand-red transition-all font-mono">
+          <span class="absolute left-4 top-3.5 text-gray-400">⚡</span>
+        </div>
+      </div>
+
+      <!-- 搜尋結果/車站列表 -->
+      <div id="searchResultHeader" class="hidden text-sm font-bold text-brand-red px-2">搜尋結果 (HWID)</div>
+      <div id="stationList" class="grid grid-cols-1 gap-4">
+        <!-- 動態渲染車站按鈕 -->
+        <div class="animate-pulse flex space-x-4 bg-white p-6 rounded-huge shadow-xl">
+          <div class="flex-1 space-y-4 py-1">
+            <div class="h-4 bg-gray-200 rounded w-3/4"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Beacon 列表頁面 -->
+    <div id="beaconPage" class="hidden space-y-6">
+      <div id="currentStationTitle" class="text-2xl font-bold text-brand-red mb-4 px-2"></div>
+      <div id="beaconList" class="space-y-4">
+        <!-- 動態渲染 Beacon 資訊卡 -->
+      </div>
+    </div>
+
+    <!-- 3. 拍照上傳頁面 -->
+    <div id="uploadPage" class="hidden space-y-6">
+      <div class="bg-white p-8 rounded-huge shadow-2xl space-y-6">
+        <div>
+          <h3 id="targetHwid" class="text-2xl font-bold text-brand-red">HWID: ----</h3>
+          <p id="targetDetails" class="text-gray-500">線別 - 站名 - 層別</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <!-- 施工前照片 -->
+          <div class="space-y-2">
+            <label class="text-sm font-bold text-gray-600">施工前照片</label>
+            <div
+              class="photo-placeholder rounded-3xl aspect-square flex flex-col items-center justify-center cursor-pointer relative overflow-hidden"
+              onclick="triggerInput('before')">
+              <span id="label-before" class="text-gray-400 text-xs text-center p-2">點擊拍照/上傳</span>
+              <img id="prev-before" class="absolute inset-0 w-full h-full object-cover hidden">
+            </div>
+            <input type="file" id="input-before" accept="image/*" capture="environment" class="hidden"
+              onchange="previewImage(this, 'before')">
+          </div>
+          <!-- 施工後照片 -->
+          <div class="space-y-2">
+            <label class="text-sm font-bold text-gray-600">施工後照片</label>
+            <div
+              class="photo-placeholder rounded-3xl aspect-square flex flex-col items-center justify-center cursor-pointer relative overflow-hidden"
+              onclick="triggerInput('after')">
+              <span id="label-after" class="text-gray-400 text-xs text-center p-2">點擊拍照/上傳</span>
+              <img id="prev-after" class="absolute inset-0 w-full h-full object-cover hidden">
+            </div>
+            <input type="file" id="input-after" accept="image/*" capture="environment" class="hidden"
+              onchange="previewImage(this, 'after')">
+          </div>
+          <!-- 設備外觀截圖 -->
+          <div class="space-y-2">
+            <label class="text-sm font-bold text-gray-600">設備外觀截圖</label>
+            <div
+              class="photo-placeholder rounded-3xl aspect-square flex flex-col items-center justify-center cursor-pointer relative overflow-hidden"
+              onclick="triggerInput('appearance')">
+              <span id="label-appearance" class="text-gray-400 text-xs text-center p-2">點擊拍照</span>
+              <img id="prev-appearance" class="absolute inset-0 w-full h-full object-cover hidden">
+            </div>
+            <input type="file" id="input-appearance" accept="image/*" capture="environment" class="hidden"
+              onchange="previewImage(this, 'appearance')">
+          </div>
+          <!-- 掃描訊號截圖 -->
+          <div class="space-y-2">
+            <label class="text-sm font-bold text-gray-600">掃描訊號截圖</label>
+            <div
+              class="photo-placeholder rounded-3xl aspect-square flex flex-col items-center justify-center cursor-pointer relative overflow-hidden"
+              onclick="triggerInput('signal')">
+              <span id="label-signal" class="text-gray-400 text-xs text-center p-2">點擊選擇截圖</span>
+              <img id="prev-signal" class="absolute inset-0 w-full h-full object-cover hidden">
+            </div>
+            <input type="file" id="input-signal" accept="image/*" class="hidden"
+              onchange="previewImage(this, 'signal')">
+          </div>
+        </div>
+
+        <button onclick="submitData()"
+          class="w-full brand-red text-white font-bold py-4 rounded-full shadow-lg hover:brightness-110 transition-all text-lg">
+          確認上傳所有照片
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="fixed inset-0 flex items-center justify-center z-[100]">
+    <div class="text-center">
+      <div class="inline-block w-12 h-12 border-4 border-brand-red border-t-transparent rounded-full animate-spin">
+      </div>
+      <p class="mt-4 font-bold text-brand-red">處理中，請稍候...</p>
+    </div>
+  </div>
+
+  <script>
+    // --- 配置區 ---
+    // 請將此處替換為你部署後的 GAS Web App 網址
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw_9-9m9nPNODFQgVCbHoWOqz9j5FrLDvNs5bsAr1ysJGgFbZpxT1UabwzfW8RYqcSm/exec";
+    // --------------
+
+    let currentData = {};
+    let allStations = [];
+    let searchTimeout = null;
+    let uploadedImages = { before: null, after: null, appearance: null, signal: null };
+
+    // 通用的 API 呼叫函式
+    async function callApi(action, params = {}) {
+      try {
+        const response = await fetch(GAS_WEB_APP_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action, params })
+        });
+        const result = await response.json();
+        if (result.success) return result.data;
+        throw new Error(result.message);
+      } catch (err) {
+        console.error("API Error:", err);
+        throw err;
+      }
+    }
+
+    // 初始化：載入車站列表
+    window.onload = async () => {
+      // 如果是在 GAS 環境內開啟，或者已經填寫了 URL
+      if (GAS_WEB_APP_URL !== "YOUR_GAS_WEB_APP_URL") {
+        try {
+          const data = await callApi('getStations');
+          allStations = data;
+          renderStations(data);
+        } catch (err) {
+          alert("讀取車站列表失敗: " + err.message);
+        }
+      } else {
+        // 如果還沒填 URL，顯示預覽資料或提示
+        console.warn("未偵測到 GAS_WEB_APP_URL，進入預覽模式");
+        allStations = ['台北車站', '頂埔', '永寧', '土城', '海山'];
+        renderStations(allStations);
+      }
+    };
+
+    // 過濾車站列表
+    function filterStations() {
+      const query = document.getElementById('stationSearch').value.toLowerCase();
+      const filtered = allStations.filter(s => s.toLowerCase().includes(query));
+      document.getElementById('searchResultHeader').classList.add('hidden');
+      renderStations(filtered);
+    }
+
+    // 防抖搜尋 HWID
+    function debounceSearchHwid() {
+      const query = document.getElementById('hwidSearch').value.trim();
+      clearTimeout(searchTimeout);
+      
+      if (query.length < 2) {
+        if (query.length === 0) filterStations();
+        return;
+      }
+
+      searchTimeout = setTimeout(() => {
+        performHwidSearch(query);
+      }, 500);
+    }
+
+    async function performHwidSearch(query) {
+      document.getElementById('stationList').innerHTML = `<div class="p-8 text-center text-gray-500 animate-pulse">搜尋中...</div>`;
+
+      try {
+        const results = await callApi('searchBeaconsByHwid', { query });
+        renderHwidResults(results);
+      } catch (err) {
+        alert("搜尋失敗: " + err.message);
+      }
+    }
+
+    function renderHwidResults(results) {
+      const container = document.getElementById('stationList');
+      const header = document.getElementById('searchResultHeader');
+      
+      if (!results || results.length === 0) {
+        header.classList.add('hidden');
+        container.innerHTML = `<div class="p-8 text-center text-gray-500 bg-white rounded-huge shadow-xl">找不到符合的 HWID</div>`;
+        return;
+      }
+
+      header.classList.remove('hidden');
+      container.innerHTML = results.map(b => `
+        <div onclick='openUploadForm(${JSON.stringify(b)})' class="bg-white p-6 rounded-huge shadow-lg hover:shadow-xl transition-all cursor-pointer group border-l-8 border-brand-red">
+          <div class="flex flex-col">
+            <span class="text-xs font-bold text-gray-400 mb-1">${b.station} - ${b.line}</span>
+            <div class="flex justify-between items-end">
+              <div>
+                <span class="text-lg font-bold text-gray-800">${b.floor}</span>
+                <span class="ml-2 px-3 py-1 bg-gray-100 rounded-full text-brand-red font-mono text-sm font-bold">${b.hwid}</span>
+              </div>
+              <span class="brand-red text-white p-2 rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity">直接進入</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderStations(stations) {
+      const container = document.getElementById('stationList');
+      if (!stations || stations.length === 0) {
+        container.innerHTML = `<div class="p-8 text-center text-gray-500 bg-white rounded-huge shadow-xl">
+          目前試算表中沒有施工資料，請先填寫資料。
+        </div>`;
+        return;
+      }
+      container.innerHTML = stations.map(s => `
+        <div onclick="selectStation('${s}')" class="bg-white p-6 rounded-huge shadow-xl hover:shadow-2xl transition-all cursor-pointer border-l-8 border-brand-red group">
+          <div class="flex justify-between items-center">
+            <span class="text-xl font-bold text-gray-800">${s}</span>
+            <span class="text-brand-red group-hover:translate-x-2 transition-transform">→</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function selectStation(stationName) {
+      showLoading(true);
+      document.getElementById('currentStationTitle').innerText = stationName;
+      try {
+        const beacons = await callApi('getBeaconDetails', { stationName });
+        renderBeacons(beacons);
+        showLoading(false);
+      } catch (err) {
+        alert("讀取設備失敗: " + err.message);
+        showLoading(false);
+      }
+    }
+
+    function renderBeacons(beacons) {
+      const container = document.getElementById('beaconList');
+      container.innerHTML = beacons.map(b => `
+        <div onclick='openUploadForm(${JSON.stringify(b)})' class="bg-white p-6 rounded-huge shadow-lg hover:shadow-xl transition-all cursor-pointer group">
+          <div class="flex flex-col">
+            <span class="text-xs font-bold text-gray-400 mb-1">${b.line} - ${b.siteName}</span>
+            <div class="flex justify-between items-end">
+              <div>
+                <span class="text-lg font-bold text-gray-800">${b.floor}</span>
+                <span class="ml-2 px-3 py-1 bg-gray-100 rounded-full text-brand-red font-mono text-sm">${b.hwid}</span>
+              </div>
+              <span class="brand-red text-white p-2 rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity">選取</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+      switchView('beaconPage');
+    }
+
+    function openUploadForm(beacon) {
+      currentData = beacon;
+      document.getElementById('targetHwid').innerText = `HWID: ${beacon.hwid}`;
+      document.getElementById('targetDetails').innerText = `${beacon.line} - ${beacon.siteName} - ${beacon.floor}`;
+      // 重置圖片
+      uploadedImages = { before: null, after: null, appearance: null, signal: null };
+      ['before', 'after', 'appearance', 'signal'].forEach(key => {
+        document.getElementById(`prev-${key}`).classList.add('hidden');
+        document.getElementById(`label-${key}`).classList.remove('hidden');
+      });
+      switchView('uploadPage');
+    }
+
+    function triggerInput(id) {
+      document.getElementById(`input-${id}`).click();
+    }
+
+    function previewImage(input, key) {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          uploadedImages[key] = e.target.result;
+          const img = document.getElementById(`prev-${key}`);
+          img.src = e.target.result;
+          img.classList.remove('hidden');
+          document.getElementById(`label-${key}`).classList.add('hidden');
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+
+    async function submitData() {
+      if (!uploadedImages.before || !uploadedImages.after || !uploadedImages.appearance || !uploadedImages.signal) {
+        alert('請完成所有四張照片的拍攝/上傳！');
+        return;
+      }
+
+      showLoading(true);
+      const payload = {
+        ...currentData,
+        images: uploadedImages
+      };
+
+      try {
+        const res = await callApi('processUpload', { payload });
+        showLoading(false);
+        if (res.success) {
+          alert('上傳成功！檔案已存入 Google Drive 並更新試算表。');
+          showStationList();
+        } else {
+          alert('錯誤: ' + res.message);
+        }
+      } catch (err) {
+        showLoading(false);
+        alert("上傳失敗: " + err.message);
+      }
+    }
+
+    function showStationList() {
+      switchView('stationPage');
+    }
+
+    function switchView(viewId) {
+      ['stationPage', 'beaconPage', 'uploadPage'].forEach(id => {
+        document.getElementById(id).classList.add('hidden');
+      });
+      document.getElementById(viewId).classList.remove('hidden');
+      document.getElementById('backBtn').classList.toggle('hidden', viewId === 'stationPage');
+    }
+
+    function showLoading(show) {
+      document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
+    }
+  </script>
+</body>
+
+</html>
