@@ -185,7 +185,7 @@
   <script>
     // --- 配置區 ---
     // 請將此處替換為你部署後的 GAS Web App 網址
-    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw_9-9m9nPNODFQgVCbHoWOqz9j5FrLDvNs5bsAr1ysJGgFbZpxT1UabwzfW8RYqcSm/exec";
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzce8BFNCuAnF1g-s8F-ran1wkwoCMen2sGg9s-47Ydm4rRmLRFKlk9fTtD-MZmO3VC/exec";
     // --------------
 
     let currentData = {};
@@ -371,29 +371,64 @@
     }
 
     async function submitData() {
-      if (!uploadedImages.before || !uploadedImages.after || !uploadedImages.appearance || !uploadedImages.signal) {
-        alert('請完成所有四張照片的拍攝/上傳！');
-        return;
+      const photoTypes = {
+        before: "施工前照片",
+        after: "施工後照片",
+        appearance: "設備外觀截圖",
+        signal: "掃描訊號截圖"
+      };
+
+      // 檢查是否所有照片都已選取
+      for (const key in photoTypes) {
+        if (!uploadedImages[key]) {
+          alert(`請完成「${photoTypes[key]}」的拍攝/上傳！`);
+          return;
+        }
       }
 
       showLoading(true);
-      const payload = {
-        ...currentData,
-        images: uploadedImages
-      };
+      const finalUrls = {};
 
       try {
-        const res = await callApi('processUpload', { payload });
+        // 1. 逐張上傳照片
+        for (const [key, label] of Object.entries(photoTypes)) {
+          console.log(`正在上傳: ${label}...`);
+          const res = await callApi('uploadSingleImage', {
+            line: currentData.line,
+            siteName: currentData.siteName,
+            floor: currentData.floor,
+            hwid: currentData.hwid,
+            label: label,
+            base64Data: uploadedImages[key]
+          });
+          
+          if (res.success) {
+            finalUrls[key] = res.url;
+            console.log(`${label} 上傳成功`);
+          } else {
+            throw new Error(`${label} 上傳失敗: ${res.message}`);
+          }
+        }
+
+        // 2. 更新試算表網址
+        console.log("正在更新試算表...");
+        const sheetRes = await callApi('updateSpreadsheetUrls', {
+          rowIndex: currentData.rowIndex,
+          urls: finalUrls
+        });
+
         showLoading(false);
-        if (res.success) {
-          alert('上傳成功！檔案已存入 Google Drive 並更新試算表。');
+        if (sheetRes.success) {
+          alert('全部上傳成功！檔案已存入雲端並更新試算表。');
           showStationList();
         } else {
-          alert('錯誤: ' + res.message);
+          alert('照片已存檔，但試算表更新失敗: ' + sheetRes.message);
         }
+
       } catch (err) {
         showLoading(false);
-        alert("上傳失敗: " + err.message);
+        alert("作業中斷: " + err.message);
+        console.error(err);
       }
     }
 
