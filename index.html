@@ -120,10 +120,10 @@
             <div
               class="photo-placeholder rounded-3xl aspect-square flex flex-col items-center justify-center cursor-pointer relative overflow-hidden"
               onclick="triggerInput('before')">
-              <span id="label-before" class="text-gray-400 text-xs text-center p-2">點擊拍照/上傳</span>
+              <span id="label-before" class="text-gray-400 text-xs text-center p-2">點擊選擇照片</span>
               <img id="prev-before" class="absolute inset-0 w-full h-full object-cover hidden">
             </div>
-            <input type="file" id="input-before" accept="image/*" capture="environment" class="hidden"
+            <input type="file" id="input-before" accept="image/*" class="hidden"
               onchange="previewImage(this, 'before')">
           </div>
           <!-- 施工後照片 -->
@@ -132,10 +132,10 @@
             <div
               class="photo-placeholder rounded-3xl aspect-square flex flex-col items-center justify-center cursor-pointer relative overflow-hidden"
               onclick="triggerInput('after')">
-              <span id="label-after" class="text-gray-400 text-xs text-center p-2">點擊拍照/上傳</span>
+              <span id="label-after" class="text-gray-400 text-xs text-center p-2">點擊選擇照片</span>
               <img id="prev-after" class="absolute inset-0 w-full h-full object-cover hidden">
             </div>
-            <input type="file" id="input-after" accept="image/*" capture="environment" class="hidden"
+            <input type="file" id="input-after" accept="image/*" class="hidden"
               onchange="previewImage(this, 'after')">
           </div>
           <!-- 設備外觀截圖 -->
@@ -144,10 +144,10 @@
             <div
               class="photo-placeholder rounded-3xl aspect-square flex flex-col items-center justify-center cursor-pointer relative overflow-hidden"
               onclick="triggerInput('appearance')">
-              <span id="label-appearance" class="text-gray-400 text-xs text-center p-2">點擊拍照</span>
+              <span id="label-appearance" class="text-gray-400 text-xs text-center p-2">點擊選擇照片</span>
               <img id="prev-appearance" class="absolute inset-0 w-full h-full object-cover hidden">
             </div>
-            <input type="file" id="input-appearance" accept="image/*" capture="environment" class="hidden"
+            <input type="file" id="input-appearance" accept="image/*" class="hidden"
               onchange="previewImage(this, 'appearance')">
           </div>
           <!-- 掃描訊號截圖 -->
@@ -164,19 +164,10 @@
           </div>
         </div>
 
-        <div class="flex flex-col gap-3">
-          <div class="flex gap-3">
-            <button id="downloadBtn" onclick="downloadPhotos()"
-              class="flex-1 bg-blue-600 text-white font-bold py-4 rounded-full shadow-lg hover:brightness-110 transition-all text-lg">
-              下載至手機
-            </button>
-            <button id="submitBtn" onclick="submitData()" disabled
-              class="flex-[1.5] bg-gray-300 text-gray-500 font-bold py-4 rounded-full shadow-lg cursor-not-allowed transition-all text-lg">
-              確認上傳所有照片
-            </button>
-          </div>
-          <p id="backupHint" class="text-xs text-center text-red-500 font-bold">請先點擊「下載至手機」完成備份後方可上傳</p>
-        </div>
+        <button onclick="submitData()"
+          class="w-full brand-red text-white font-bold py-4 rounded-full shadow-lg hover:brightness-110 transition-all text-lg">
+          確認上傳所有照片
+        </button>
       </div>
     </div>
 
@@ -218,7 +209,6 @@
     let allStations = []; // 儲存不重複車站清單
     let searchTimeout = null;
     let uploadedImages = { before: null, after: null, appearance: null, signal: null };
-    let isDownloaded = false;
 
     // 初始化：載入所有 Beacon 資料
     window.onload = async () => {
@@ -367,19 +357,6 @@
         document.getElementById(`prev-${key}`).classList.add('hidden');
         document.getElementById(`label-${key}`).classList.remove('hidden');
       });
-      // 重置下載狀態與按鈕
-      isDownloaded = false;
-      const submitBtn = document.getElementById('submitBtn');
-      submitBtn.disabled = true;
-      submitBtn.classList.remove('brand-red', 'text-white');
-      submitBtn.classList.add('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
-
-      const downloadBtn = document.getElementById('downloadBtn');
-      downloadBtn.innerText = "下載至手機";
-      downloadBtn.classList.remove('bg-green-600');
-      downloadBtn.classList.add('bg-blue-600');
-
-      document.getElementById('backupHint').classList.remove('hidden');
 
       switchView('uploadPage');
     }
@@ -447,62 +424,7 @@
       }
     }
 
-    function downloadPhotos() {
-      const photoTypes = {
-        before: "施工前照片",
-        after: "施工後照片",
-        appearance: "設備外觀截圖",
-        signal: "掃描訊號截圖"
-      };
-
-      // 檢查是否所有照片都已選取 (為了確保備份的是完整作業內容)
-      for (const key in photoTypes) {
-        if (!uploadedImages[key]) {
-          alert(`請先完成「${photoTypes[key]}」的拍攝/上傳再進行備份！`);
-          return;
-        }
-      }
-
-      // 需要下載的類型
-      const keysToDownload = ['before', 'after', 'appearance'];
-
-      keysToDownload.forEach((key, index) => {
-        setTimeout(() => {
-          const base64 = uploadedImages[key];
-          const link = document.createElement('a');
-          link.href = base64;
-          // 檔名格式: 車站_HWID_類型.jpg
-          const filename = `${currentData.station}_${currentData.hwid}_${photoTypes[key]}.jpg`;
-          link.download = filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        }, index * 500); // 稍微間隔避免瀏覽器阻擋多個下載
-      });
-
-      isDownloaded = true;
-
-      // 更新 UI 狀態
-      const submitBtn = document.getElementById('submitBtn');
-      submitBtn.disabled = false;
-      submitBtn.classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
-      submitBtn.classList.add('brand-red', 'text-white');
-
-      const downloadBtn = document.getElementById('downloadBtn');
-      downloadBtn.innerText = "備份已下載";
-      downloadBtn.classList.remove('bg-blue-600');
-      downloadBtn.classList.add('bg-green-600');
-
-      document.getElementById('backupHint').classList.add('hidden');
-
-      alert('備份下載中，請確認手機狀態列是否有下載提示。\n下載完成後即可點擊「確認上傳」。');
-    }
-
     async function submitData() {
-      if (!isDownloaded) {
-        alert('請先點擊「下載至手機」完成備份備份！');
-        return;
-      }
       const photoTypes = {
         before: "施工前照片",
         after: "施工後照片",
