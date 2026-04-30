@@ -164,10 +164,19 @@
           </div>
         </div>
 
-        <button onclick="submitData()"
-          class="w-full brand-red text-white font-bold py-4 rounded-full shadow-lg hover:brightness-110 transition-all text-lg">
-          確認上傳所有照片
-        </button>
+        <div class="flex flex-col gap-3">
+          <div class="flex gap-3">
+            <button id="downloadBtn" onclick="downloadPhotos()"
+              class="flex-1 bg-blue-600 text-white font-bold py-4 rounded-full shadow-lg hover:brightness-110 transition-all text-lg">
+              下載至手機
+            </button>
+            <button id="submitBtn" onclick="submitData()" disabled
+              class="flex-[1.5] bg-gray-300 text-gray-500 font-bold py-4 rounded-full shadow-lg cursor-not-allowed transition-all text-lg">
+              確認上傳所有照片
+            </button>
+          </div>
+          <p id="backupHint" class="text-xs text-center text-red-500 font-bold">請先點擊「下載至手機」完成備份後方可上傳</p>
+        </div>
       </div>
     </div>
 
@@ -185,13 +194,8 @@
   <script>
     // --- 配置區 ---
     // 請將此處替換為你部署後的 GAS Web App 網址
-    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzce8BFNCuAnF1g-s8F-ran1wkwoCMen2sGg9s-47Ydm4rRmLRFKlk9fTtD-MZmO3VC/exec";
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxU32VQb44ylauufgG0mhfPgmfFPXEBaL2whiEPcuysLsXXfqeeMPI67aHEDaGvUxOe/exec";
     // --------------
-
-    let currentData = {};
-    let allStations = [];
-    let searchTimeout = null;
-    let uploadedImages = { before: null, after: null, appearance: null, signal: null };
 
     // 通用的 API 呼叫函式
     async function callApi(action, params = {}) {
@@ -209,21 +213,30 @@
       }
     }
 
-    // 初始化：載入車站列表
+    let currentData = {};
+    let allBeacons = []; // 儲存所有設備快取資料
+    let allStations = []; // 儲存不重複車站清單
+    let searchTimeout = null;
+    let uploadedImages = { before: null, after: null, appearance: null, signal: null };
+    let isDownloaded = false;
+
+    // 初始化：載入所有 Beacon 資料
     window.onload = async () => {
-      // 如果是在 GAS 環境內開啟，或者已經填寫了 URL
       if (GAS_WEB_APP_URL !== "YOUR_GAS_WEB_APP_URL") {
         try {
-          const data = await callApi('getStations');
-          allStations = data;
-          renderStations(data);
+          document.getElementById('stationList').innerHTML = `<div class="p-8 text-center text-gray-500 animate-pulse">正在同步施工清單...</div>`;
+          const data = await callApi('getAllBeacons');
+          allBeacons = data;
+          
+          // 從所有設備中提取不重複的車站清單
+          allStations = [...new Set(data.map(b => b.station))].filter(String);
+          renderStations(allStations);
         } catch (err) {
-          alert("讀取車站列表失敗: " + err.message);
+          alert("讀取資料失敗: " + err.message);
         }
       } else {
-        // 如果還沒填 URL，顯示預覽資料或提示
-        console.warn("未偵測到 GAS_WEB_APP_URL，進入預覽模式");
-        allStations = ['台北車站', '頂埔', '永寧', '土城', '海山'];
+        console.warn("預覽模式");
+        allStations = ['台北車站', '頂埔', '永寧'];
         renderStations(allStations);
       }
     };
@@ -253,13 +266,13 @@
 
     async function performHwidSearch(query) {
       document.getElementById('stationList').innerHTML = `<div class="p-8 text-center text-gray-500 animate-pulse">搜尋中...</div>`;
+      
+      // 直接從本地快取搜尋，不用等 API
+      const results = allBeacons.filter(b => 
+        b.hwid.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 20);
 
-      try {
-        const results = await callApi('searchBeaconsByHwid', { query });
-        renderHwidResults(results);
-      } catch (err) {
-        alert("搜尋失敗: " + err.message);
-      }
+      renderHwidResults(results);
     }
 
     function renderHwidResults(results) {
@@ -274,15 +287,20 @@
 
       header.classList.remove('hidden');
       container.innerHTML = results.map(b => `
-        <div onclick='openUploadForm(${JSON.stringify(b)})' class="bg-white p-6 rounded-huge shadow-lg hover:shadow-xl transition-all cursor-pointer group border-l-8 border-brand-red">
+        <div onclick='openUploadForm(${JSON.stringify(b)})' class="bg-white p-6 rounded-huge shadow-lg hover:shadow-xl transition-all cursor-pointer group border-l-8 ${b.isUploaded ? 'border-green-500 opacity-80' : 'border-brand-red'}">
           <div class="flex flex-col">
-            <span class="text-xs font-bold text-gray-400 mb-1">${b.station} - ${b.line}</span>
+            <div class="flex justify-between items-start mb-1">
+              <span class="text-xs font-bold text-gray-400">${b.station} - ${b.line}</span>
+              ${b.isUploaded ? '<span class="text-[10px] bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">✅ 已完成</span>' : ''}
+            </div>
             <div class="flex justify-between items-end">
               <div>
                 <span class="text-lg font-bold text-gray-800">${b.floor}</span>
                 <span class="ml-2 px-3 py-1 bg-gray-100 rounded-full text-brand-red font-mono text-sm font-bold">${b.hwid}</span>
               </div>
-              <span class="brand-red text-white p-2 rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity">直接進入</span>
+              <span class="${b.isUploaded ? 'bg-green-500' : 'brand-red'} text-white p-2 rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                ${b.isUploaded ? '重新上傳' : '直接進入'}
+              </span>
             </div>
           </div>
         </div>
@@ -310,28 +328,28 @@
     async function selectStation(stationName) {
       showLoading(true);
       document.getElementById('currentStationTitle').innerText = stationName;
-      try {
-        const beacons = await callApi('getBeaconDetails', { stationName });
-        renderBeacons(beacons);
-        showLoading(false);
-      } catch (err) {
-        alert("讀取設備失敗: " + err.message);
-        showLoading(false);
-      }
+      
+      // 直接從本地快取篩選，秒開！
+      const beacons = allBeacons.filter(b => b.station === stationName);
+      renderBeacons(beacons);
+      showLoading(false);
     }
 
     function renderBeacons(beacons) {
       const container = document.getElementById('beaconList');
       container.innerHTML = beacons.map(b => `
-        <div onclick='openUploadForm(${JSON.stringify(b)})' class="bg-white p-6 rounded-huge shadow-lg hover:shadow-xl transition-all cursor-pointer group">
-          <div class="flex flex-col">
+        <div onclick='openUploadForm(${JSON.stringify(b)})' class="bg-white p-6 rounded-huge shadow-lg hover:shadow-xl transition-all cursor-pointer group relative overflow-hidden">
+          ${b.isUploaded ? '<div class="absolute top-0 right-0 bg-green-500 text-white text-[10px] px-3 py-1 font-bold rounded-bl-xl shadow-sm">✅ 已完成</div>' : ''}
+          <div class="flex flex-col ${b.isUploaded ? 'opacity-70' : ''}">
             <span class="text-xs font-bold text-gray-400 mb-1">${b.line} - ${b.siteName}</span>
             <div class="flex justify-between items-end">
               <div>
                 <span class="text-lg font-bold text-gray-800">${b.floor}</span>
                 <span class="ml-2 px-3 py-1 bg-gray-100 rounded-full text-brand-red font-mono text-sm">${b.hwid}</span>
               </div>
-              <span class="brand-red text-white p-2 rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity">選取</span>
+              <span class="${b.isUploaded ? 'bg-green-500' : 'brand-red'} text-white p-2 rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                ${b.isUploaded ? '檢視/重新上傳' : '選取'}
+              </span>
             </div>
           </div>
         </div>
@@ -349,6 +367,20 @@
         document.getElementById(`prev-${key}`).classList.add('hidden');
         document.getElementById(`label-${key}`).classList.remove('hidden');
       });
+      // 重置下載狀態與按鈕
+      isDownloaded = false;
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = true;
+      submitBtn.classList.remove('brand-red', 'text-white');
+      submitBtn.classList.add('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+      
+      const downloadBtn = document.getElementById('downloadBtn');
+      downloadBtn.innerText = "下載至手機";
+      downloadBtn.classList.remove('bg-green-600');
+      downloadBtn.classList.add('bg-blue-600');
+      
+      document.getElementById('backupHint').classList.remove('hidden');
+
       switchView('uploadPage');
     }
 
@@ -358,19 +390,107 @@
 
     function previewImage(input, key) {
       if (input.files && input.files[0]) {
+        const file = input.files[0];
         const reader = new FileReader();
+        
         reader.onload = (e) => {
-          uploadedImages[key] = e.target.result;
-          const img = document.getElementById(`prev-${key}`);
+          const img = new Image();
+          img.onload = () => {
+            // 設定壓縮參數
+            const MAX_WIDTH = 1600;
+            const MAX_HEIGHT = 1600;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // 壓縮並轉為 Base64 (品質 0.8)
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+            
+            uploadedImages[key] = compressedBase64;
+            const previewImg = document.getElementById(`prev-${key}`);
+            previewImg.src = compressedBase64;
+            previewImg.classList.remove('hidden');
+            document.getElementById(`label-${key}`).classList.add('hidden');
+          };
           img.src = e.target.result;
-          img.classList.remove('hidden');
-          document.getElementById(`label-${key}`).classList.add('hidden');
         };
-        reader.readAsDataURL(input.files[0]);
+        reader.readAsDataURL(file);
       }
     }
 
+    function downloadPhotos() {
+      const photoTypes = {
+        before: "施工前照片",
+        after: "施工後照片",
+        appearance: "設備外觀截圖",
+        signal: "掃描訊號截圖"
+      };
+
+      // 檢查是否所有照片都已選取 (為了確保備份的是完整作業內容)
+      for (const key in photoTypes) {
+        if (!uploadedImages[key]) {
+          alert(`請先完成「${photoTypes[key]}」的拍攝/上傳再進行備份！`);
+          return;
+        }
+      }
+
+      // 需要下載的類型
+      const keysToDownload = ['before', 'after', 'appearance'];
+      
+      keysToDownload.forEach((key, index) => {
+        setTimeout(() => {
+          const base64 = uploadedImages[key];
+          const link = document.createElement('a');
+          link.href = base64;
+          // 檔名格式: 車站_HWID_類型.jpg
+          const filename = `${currentData.station}_${currentData.hwid}_${photoTypes[key]}.jpg`;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }, index * 500); // 稍微間隔避免瀏覽器阻擋多個下載
+      });
+
+      isDownloaded = true;
+      
+      // 更新 UI 狀態
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+      submitBtn.classList.add('brand-red', 'text-white');
+      
+      const downloadBtn = document.getElementById('downloadBtn');
+      downloadBtn.innerText = "備份已下載";
+      downloadBtn.classList.remove('bg-blue-600');
+      downloadBtn.classList.add('bg-green-600');
+      
+      document.getElementById('backupHint').classList.add('hidden');
+      
+      alert('備份下載中，請確認手機狀態列是否有下載提示。\n下載完成後即可點擊「確認上傳」。');
+    }
+
     async function submitData() {
+      if (!isDownloaded) {
+        alert('請先點擊「下載至手機」完成備份備份！');
+        return;
+      }
       const photoTypes = {
         before: "施工前照片",
         after: "施工後照片",
@@ -391,8 +511,11 @@
 
       try {
         // 1. 逐張上傳照片
+        let count = 1;
         for (const [key, label] of Object.entries(photoTypes)) {
           console.log(`正在上傳: ${label}...`);
+          document.querySelector('#loadingOverlay p').innerText = `正在上傳 (${count}/4): ${label}...`;
+          
           const res = await callApi('uploadSingleImage', {
             line: currentData.line,
             siteName: currentData.siteName,
@@ -405,13 +528,14 @@
           if (res.success) {
             finalUrls[key] = res.url;
             console.log(`${label} 上傳成功`);
+            count++;
           } else {
             throw new Error(`${label} 上傳失敗: ${res.message}`);
           }
         }
 
         // 2. 更新試算表網址
-        console.log("正在更新試算表...");
+        document.querySelector('#loadingOverlay p').innerText = `正在更新試算表...`;
         const sheetRes = await callApi('updateSpreadsheetUrls', {
           rowIndex: currentData.rowIndex,
           urls: finalUrls
@@ -419,6 +543,10 @@
 
         showLoading(false);
         if (sheetRes.success) {
+          // 更新本地快取狀態
+          const updatedBeacon = allBeacons.find(b => b.rowIndex === currentData.rowIndex);
+          if (updatedBeacon) updatedBeacon.isUploaded = true;
+          
           alert('全部上傳成功！檔案已存入雲端並更新試算表。');
           showStationList();
         } else {
